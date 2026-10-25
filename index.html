@@ -1,0 +1,1608 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>전국 고속도로 차 피하기 (PC 가로 화면 모드)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Noto+Sans+KR:wght@400;700;900&display=swap');
+    
+    * {
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body {
+      font-family: 'Noto Sans KR', sans-serif;
+      background-color: #050811;
+      color: #f8fafc;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+    }
+
+    .font-arcade {
+      font-family: 'Orbitron', sans-serif;
+    }
+
+    /* Screen shake */
+    .shake {
+      animation: shake 0.35s cubic-bezier(.36,.07,.19,.97) both;
+    }
+
+    @keyframes shake {
+      10%, 90% { transform: translate3d(-3px, 0, 0); }
+      20%, 80% { transform: translate3d(5px, 0, 0); }
+      30%, 50%, 70% { transform: translate3d(-7px, 0, 0); }
+      40%, 60% { transform: translate3d(7px, 0, 0); }
+    }
+
+    @keyframes pulse-glow {
+      0%, 100% { transform: scale(1); box-shadow: 0 0 8px rgba(56, 189, 248, 0.6); }
+      50% { transform: scale(1.3); box-shadow: 0 0 18px rgba(56, 189, 248, 1); }
+    }
+
+    .active-node {
+      animation: pulse-glow 1.2s infinite;
+    }
+
+    /* Custom scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.6);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(56, 189, 248, 0.5);
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body class="flex flex-col justify-between items-center p-2 md:p-4 select-none">
+
+  <!-- PORTRAIT / MOBILE WARNING OVERLAY -->
+  <div id="portraitWarning" class="hidden fixed inset-0 bg-slate-950 z-50 flex flex-col items-center justify-center p-6 text-center pointer-events-auto">
+    <div class="w-16 h-16 bg-amber-500/20 text-amber-400 rounded-2xl flex items-center justify-center mb-4 border border-amber-500/30 text-3xl">
+      <i class="fa-solid fa-desktop"></i>
+    </div>
+    <h2 class="text-xl font-bold text-white mb-2">PC 키보드 전용 / 가로 화면 모드</h2>
+    <p class="text-sm text-slate-400 max-w-md">
+      이 게임은 **PC 키보드(방향키 / WASD)** 전용으로 제작되었습니다. 화면을 가로로 전환하거나 PC 브라우저에서 플레이해 주세요!
+    </p>
+  </div>
+
+  <!-- MAIN HUD & TOP ROUTE BAR -->
+  <header class="w-full max-w-6xl bg-slate-900/90 border border-slate-700/80 rounded-2xl p-3 shadow-2xl backdrop-blur-md flex flex-col gap-2 z-10">
+    
+    <!-- HUD Status Bar -->
+    <div class="flex justify-between items-center px-2">
+      <!-- Active Route & Distance -->
+      <div class="flex items-center gap-3">
+        <span id="routeBadge" class="bg-gradient-to-r from-blue-600 to-cyan-600 text-xs md:text-sm font-black px-3 py-1 rounded-full uppercase tracking-wider flex items-center gap-1.5 shadow-lg shadow-blue-500/20">
+          <i class="fa-solid fa-route"></i> <span id="currentRouteTitle">서울 ➔ 거제</span>
+        </span>
+        <span class="text-slate-300 text-xs md:text-sm font-arcade">
+          남은거리: <strong id="distRemaining" class="text-amber-400 font-bold text-sm md:text-base">400km</strong>
+        </span>
+      </div>
+
+      <!-- Live Location Banner -->
+      <div class="hidden sm:flex items-center gap-2 bg-slate-800/80 px-3 py-1 rounded-xl border border-slate-700/60 text-xs text-slate-300">
+        <i class="fa-solid fa-location-dot text-cyan-400"></i>
+        <span>현재 구간:</span>
+        <strong id="currentSegmentText" class="text-cyan-300 font-bold">서울 ➔ 수원</strong>
+      </div>
+
+      <!-- Right HUD Stats (Coins, Lives, Timer) -->
+      <div class="flex items-center gap-4">
+        <!-- Coin Counter HUD -->
+        <div class="flex items-center gap-1.5 bg-amber-500/20 border border-amber-500/40 px-3 py-1 rounded-xl text-amber-300 font-arcade text-xs md:text-sm shadow-md">
+          <i class="fa-solid fa-coins text-amber-400"></i>
+          <span id="hudCoins" class="font-bold">0</span>
+        </div>
+
+        <!-- Lives Hearts -->
+        <div id="livesContainer" class="flex gap-1.5 text-red-500 text-sm md:text-base">
+          <i class="fa-solid fa-heart"></i>
+          <i class="fa-solid fa-heart"></i>
+          <i class="fa-solid fa-heart"></i>
+        </div>
+
+        <!-- Realtime Timer -->
+        <div class="font-arcade text-emerald-400 font-black text-base md:text-xl tracking-wider min-w-[110px] text-right drop-shadow-[0_0_10px_rgba(52,211,153,0.4)]" id="timerDisplay">
+          00:00.00
+        </div>
+      </div>
+    </div>
+
+    <!-- Linear Route Bar & 10 Checkpoint Nodes -->
+    <div class="relative w-full px-2 pt-1 pb-5">
+      <div class="w-full h-3 bg-slate-800 rounded-full overflow-hidden relative border border-slate-700">
+        <div id="progressBar" class="h-full bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400 w-0 transition-all duration-100"></div>
+      </div>
+
+      <!-- Checkpoint Nodes & Region Labels Overlay -->
+      <div id="checkpointNodes" class="absolute top-1 left-2 right-2 flex justify-between items-center pointer-events-none">
+        <!-- Dynamic nodes & text labels generated here -->
+      </div>
+    </div>
+  </header>
+
+  <!-- WIDESCREEN GAME CANVAS CONTAINER -->
+  <main id="canvasContainer" class="relative w-full max-w-6xl my-auto flex-1 flex items-center justify-center overflow-hidden rounded-2xl border-2 border-slate-700/80 shadow-2xl bg-slate-950 my-2">
+    <canvas id="gameCanvas" class="w-full h-full block rounded-2xl z-0"></canvas>
+
+    <!-- OVERLAY 1: START & ROUTE SELECT SCREEN -->
+    <div id="startOverlay" class="absolute inset-0 bg-slate-950/95 backdrop-blur-md flex flex-col justify-between p-6 z-20 pointer-events-auto">
+      <!-- Top Title Bar & Banked Coins -->
+      <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+        <div class="flex items-center gap-3">
+          <div class="w-12 h-12 bg-blue-600/20 text-blue-400 rounded-2xl flex items-center justify-center border border-blue-500/30 text-2xl shadow-lg">
+            <i class="fa-solid fa-map-location-dot"></i>
+          </div>
+          <div>
+            <h1 class="text-lg md:text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-cyan-300 to-emerald-400">
+              전국 고속도로 차 피하기 (PC 가로 화면 모드)
+            </h1>
+            <p class="text-xs text-slate-400">총 8개 노선(제주 해상대교, 양양, 청주 포함)과 10종의 차량을 즐겨보세요!</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-4">
+          <!-- Total Banked Coins -->
+          <div class="flex items-center gap-2 bg-amber-500/20 border border-amber-500/50 px-4 py-2 rounded-xl font-arcade text-amber-300 text-sm md:text-base shadow-lg">
+            <i class="fa-solid fa-coins text-amber-400 text-lg"></i>
+            <span id="totalBankCoins">0</span> 코인
+          </div>
+
+          <!-- Open Garage Button -->
+          <button id="openGarageBtn" class="cursor-pointer px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs md:text-sm rounded-xl shadow-lg transition transform active:scale-95 flex items-center gap-2">
+            <i class="fa-solid fa-warehouse"></i> 차고 상점 (10종)
+          </button>
+        </div>
+      </div>
+
+      <!-- Main Selection Body: Route Selector & Equipped Car Quick Card -->
+      <div class="grid grid-cols-12 gap-4 my-auto py-2">
+        <!-- Left: Route List (8 cols) -->
+        <div class="col-span-8 flex flex-col gap-2">
+          <div class="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+            <i class="fa-solid fa-route text-cyan-400"></i> 주행 노선 선택 (총 8개 주요 코스)
+          </div>
+          <div id="routeListContainer" class="space-y-2 max-h-[220px] overflow-y-auto pr-2">
+            <!-- Dynamic Route Cards -->
+          </div>
+        </div>
+
+        <!-- Right: Current Vehicle & Keyboard Control Banner (4 cols) -->
+        <div class="col-span-4 flex flex-col justify-between gap-3">
+          <!-- Equipped Vehicle Info Card -->
+          <div class="bg-slate-900/90 border border-slate-700/80 p-3.5 rounded-2xl flex flex-col gap-2 shadow-inner">
+            <div class="text-[10px] text-slate-400 uppercase font-bold tracking-wider">현재 선택된 차량</div>
+            <div class="flex items-center gap-3">
+              <div id="equippedCarIcon" class="w-12 h-12 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-2xl text-red-500 shadow-md">
+                <i class="fa-solid fa-car"></i>
+              </div>
+              <div>
+                <div id="equippedCarName" class="font-bold text-sm text-white">기본 경차</div>
+                <div id="equippedCarPerk" class="text-xs text-cyan-300 mt-0.5">표준 성능</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Keyboard Control Guide -->
+          <div class="bg-slate-900/90 border border-slate-800 p-3 rounded-2xl text-xs space-y-2 text-slate-300">
+            <div class="font-bold text-amber-400 flex items-center gap-1.5 text-xs">
+              <i class="fa-solid fa-keyboard"></i> PC 조작법 (키보드 전용)
+            </div>
+            <div class="grid grid-cols-2 gap-1.5 text-[11px]">
+              <div><kbd class="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-amber-300">↑ / W</kbd> 가속</div>
+              <div><kbd class="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-amber-300">↓ / S</kbd> 감속</div>
+              <div><kbd class="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-cyan-300">← / A</kbd> 위쪽 차선</div>
+              <div><kbd class="px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-cyan-300">→ / D</kbd> 아래쪽 차선</div>
+              <div class="col-span-2"><kbd class="px-2 py-0.5 bg-slate-800 border border-slate-700 rounded text-emerald-300">Spacebar</kbd> 순간 부스터</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Start Game CTA Button -->
+      <button id="startBtn" class="cursor-pointer w-full py-3.5 bg-gradient-to-r from-blue-600 via-cyan-600 to-emerald-600 hover:from-blue-500 hover:to-emerald-500 text-white font-extrabold text-base md:text-lg rounded-2xl shadow-xl shadow-blue-600/30 transform active:scale-98 transition flex items-center justify-center gap-3">
+        <i class="fa-solid fa-circle-play text-xl"></i> 선택 노선으로 고속도로 주행 시작하기
+      </button>
+    </div>
+
+    <!-- OVERLAY 2: GARAGE / CAR SHOP MODAL -->
+    <div id="garageModal" class="hidden absolute inset-0 bg-slate-950/95 backdrop-blur-md flex flex-col justify-between p-6 z-30 pointer-events-auto">
+      <!-- Modal Header -->
+      <div class="flex justify-between items-center border-b border-slate-800 pb-3">
+        <div class="flex items-center gap-3">
+          <i class="fa-solid fa-warehouse text-amber-400 text-2xl"></i>
+          <div>
+            <h2 class="text-lg font-bold text-white">차고 상점 (총 10종의 차량)</h2>
+            <p class="text-xs text-slate-400">주행 중 코인을 모아 차량을 구매하고 특수 스킬을 활용하세요.</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-4">
+          <div class="flex items-center gap-2 bg-amber-500/20 border border-amber-500/50 px-3.5 py-1.5 rounded-xl font-arcade text-amber-300 text-sm">
+            <i class="fa-solid fa-coins text-amber-400"></i>
+            <span id="garageCoinBalance">0</span> 코인
+          </div>
+          <button id="closeGarageBtn" class="cursor-pointer text-slate-400 hover:text-white text-2xl px-2">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Car Grid (Horizontal Widescreen 2 Rows) -->
+      <div id="carGrid" class="grid grid-cols-2 gap-3 my-auto max-h-[340px] overflow-y-auto pr-2">
+        <!-- Dynamic Cars List -->
+      </div>
+
+      <!-- Close Button -->
+      <button id="garageDoneBtn" class="cursor-pointer w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-sm rounded-xl border border-slate-700 transition">
+        확인 및 돌아가기
+      </button>
+    </div>
+
+    <!-- OVERLAY 3: GAME OVER SCREEN -->
+    <div id="gameOverOverlay" class="hidden absolute inset-0 bg-slate-950/95 backdrop-blur-md flex flex-col items-center justify-center text-center p-6 z-20 pointer-events-auto">
+      <div class="w-16 h-16 bg-red-600/20 text-red-500 rounded-2xl flex items-center justify-center mb-3 border border-red-500/30 text-3xl">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+      </div>
+      <h2 class="text-2xl font-black text-red-500 mb-1">고속도로 사고 발생!</h2>
+      <p class="text-sm text-slate-400 mb-4" id="crashReason">충돌로 인해 운행이 중단되었습니다.</p>
+
+      <div class="bg-slate-800/90 border border-slate-700/80 p-4 rounded-2xl w-full max-w-sm mb-5 text-slate-300 text-xs md:text-sm space-y-2.5">
+        <div class="flex justify-between">
+          <span>선택 노선:</span>
+          <strong id="goRouteName" class="text-white">서울 ➔ 거제</strong>
+        </div>
+        <div class="flex justify-between">
+          <span>최종 지점:</span>
+          <strong id="goRegion" class="text-cyan-400">대전</strong>
+        </div>
+        <div class="flex justify-between">
+          <span>획득 코인:</span>
+          <strong id="goCoins" class="text-amber-400 font-arcade">+0 코인</strong>
+        </div>
+        <div class="flex justify-between">
+          <span>주행 시간:</span>
+          <strong id="goTime" class="text-emerald-400 font-arcade">01:23.45</strong>
+        </div>
+      </div>
+
+      <div class="flex gap-3 w-full max-w-sm">
+        <button id="restartBtn" class="cursor-pointer flex-1 py-3 bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-500 hover:to-amber-500 text-white font-bold rounded-xl shadow-lg active:scale-95 transition text-xs md:text-sm flex items-center justify-center gap-2">
+          <i class="fa-solid fa-rotate-right"></i> 다시 도전하기
+        </button>
+        <button id="changeRouteBtn" class="cursor-pointer flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl border border-slate-700 active:scale-95 transition text-xs md:text-sm flex items-center justify-center gap-2">
+          <i class="fa-solid fa-list-ul"></i> 노선 / 차고
+        </button>
+      </div>
+    </div>
+
+    <!-- OVERLAY 4: VICTORY SCREEN -->
+    <div id="victoryOverlay" class="hidden absolute inset-0 bg-slate-950/95 backdrop-blur-md flex flex-col items-center justify-center text-center p-6 z-20 pointer-events-auto">
+      <div class="w-20 h-20 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mb-3 border border-emerald-500/40 text-4xl shadow-xl shadow-emerald-500/20 animate-bounce">
+        <i class="fa-solid fa-trophy"></i>
+      </div>
+      <h2 class="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-300 mb-1">
+        목적지 완주 성공!
+      </h2>
+      <p class="text-xs md:text-sm text-slate-400 mb-4" id="victorySubtitle">서울에서 목적지까지 무사히 완주하셨습니다!</p>
+
+      <div class="bg-slate-800/90 border border-slate-700/80 p-5 rounded-2xl w-full max-w-sm mb-5 text-slate-200 space-y-2.5 shadow-inner">
+        <div class="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">최종 완주 주행 기록</div>
+        <div id="finalRecordTime" class="text-3xl font-black font-arcade text-amber-400 drop-shadow-md">
+          02:45.12
+        </div>
+        <div class="text-xs text-slate-400 pt-2 border-t border-slate-700 flex justify-between">
+          <span>획득 코인:</span>
+          <span id="victoryCoins" class="text-amber-300 font-bold font-arcade">+0 코인</span>
+        </div>
+        <div class="text-xs text-slate-400 flex justify-between">
+          <span>완주 노선:</span>
+          <span id="victoryRouteName" class="text-cyan-400 font-bold">서울 ➔ 거제</span>
+        </div>
+        <div class="text-xs text-slate-400 flex justify-between">
+          <span>평균 속도:</span>
+          <span id="finalAvgSpeed" class="text-emerald-400 font-bold">142 km/h</span>
+        </div>
+      </div>
+
+      <div class="flex gap-3 w-full max-w-sm">
+        <button id="victoryRestartBtn" class="cursor-pointer flex-1 py-3 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold rounded-xl shadow-lg active:scale-95 transition text-xs md:text-sm flex items-center justify-center gap-2">
+          <i class="fa-solid fa-flag-checkered"></i> 한 번 더 주행하기
+        </button>
+        <button id="victoryChangeRouteBtn" class="cursor-pointer flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl border border-slate-700 active:scale-95 transition text-xs md:text-sm flex items-center justify-center gap-2">
+          <i class="fa-solid fa-route"></i> 다른 노선 / 차고
+        </button>
+      </div>
+    </div>
+
+    <!-- Checkpoint Banner Notification -->
+    <div id="checkpointBanner" class="absolute top-6 left-1/2 -translate-x-1/2 bg-blue-600/90 text-white px-6 py-2 rounded-full font-bold text-sm border border-cyan-300 shadow-2xl opacity-0 transition-all duration-300 transform -translate-y-4 pointer-events-none flex items-center gap-2 backdrop-blur-sm z-10">
+      <i class="fa-solid fa-flag text-amber-300"></i>
+      <span id="checkpointBannerText">수원 통과!</span>
+    </div>
+  </main>
+
+  <script>
+    // --- 1. ROUTE PRESETS (11 ROUTES, 10 WAYPOINTS EACH) ---
+    const ROUTE_DATA = [
+      {
+        id: 'incheon',
+        title: '서울 ➔ 인천',
+        totalDist: 70,
+        waypoints: [
+          { name: '서울', dist: 0 },
+          { name: '성남', dist: 8 },
+          { name: '안양', dist: 15 },
+          { name: '광명', dist: 22 },
+          { name: '부천', dist: 30 },
+          { name: '김포', dist: 38 },
+          { name: '인천공항', dist: 48 },
+          { name: '송도', dist: 56 },
+          { name: '인천항', dist: 64 },
+          { name: '인천', dist: 70 }
+        ]
+      },
+      {
+        id: 'ulleungdo',
+        title: '서울 ➔ 울릉도 (해상대교)',
+        totalDist: 350,
+        isSeaBridge: true,
+        seaBridgeStartDist: 220,
+        waypoints: [
+          { name: '서울', dist: 0 },
+          { name: '양평', dist: 40 },
+          { name: '원주', dist: 85 },
+          { name: '평창', dist: 130 },
+          { name: '강릉', dist: 175 },
+          { name: '묵호', dist: 200 },
+          { name: '동해', dist: 220 },
+          { name: '해상대교1', dist: 260 },
+          { name: '해상대교2', dist: 310 },
+          { name: '울릉도', dist: 350 }
+        ]
+      },
+      {
+        id: 'dokdo',
+        title: '서울 ➔ 독도 (해상대교)',
+        totalDist: 440,
+        isSeaBridge: true,
+        seaBridgeStartDist: 220,
+        waypoints: [
+          { name: '서울', dist: 0 },
+          { name: '원주', dist: 85 },
+          { name: '강릉', dist: 175 },
+          { name: '동해', dist: 220 },
+          { name: '삼척', dist: 250 },
+          { name: '울릉도', dist: 330 },
+          { name: '해상대교1', dist: 370 },
+          { name: '해상대교2', dist: 410 },
+          { name: '동도', dist: 430 },
+          { name: '독도', dist: 440 }
+        ]
+      },
+      {
+        id: 'geoje',
+        title: '서울 ➔ 거제',
+        totalDist: 400,
+        waypoints: [
+          { name: '서울', dist: 0 },
+          { name: '수원', dist: 40 },
+          { name: '천안', dist: 85 },
+          { name: '대전', dist: 140 },
+          { name: '덕유산', dist: 185 },
+          { name: '함양', dist: 230 },
+          { name: '산청', dist: 270 },
+          { name: '진주', dist: 310 },
+          { name: '사천', dist: 340 },
+          { name: '통영', dist: 380 },
+          { name: '거제', dist: 400 }
+        ]
+      },
+      {
+        id: 'yangyang',
+        title: '서울 ➔ 양양',
+        totalDist: 180,
+        waypoints: [
+          { name: '서울', dist: 0 },
+          { name: '남양주', dist: 20 },
+          { name: '가평', dist: 45 },
+          { name: '춘천', dist: 70 },
+          { name: '홍천', dist: 95 },
+          { name: '인제', dist: 120 },
+          { name: '설악', dist: 140 },
+          { name: '속초', dist: 160 },
+          { name: '낙산', dist: 170 },
+          { name: '양양', dist: 180 }
+        ]
+      },
+      {
+        id: 'cheongju',
+        title: '서울 ➔ 청주',
+        totalDist: 130,
+        waypoints: [
+          { name: '서울', dist: 0 },
+          { name: '하남', dist: 15 },
+          { name: '광주', dist: 30 },
+          { name: '이천', dist: 50 },
+          { name: '음성', dist: 70 },
+          { name: '진천', dist: 85 },
+          { name: '증평', dist: 100 },
+          { name: '오창', dist: 110 },
+          { name: '청주공항', dist: 120 },
+          { name: '청주', dist: 130 }
+        ]
+      },
+      {
+        id: 'jeju',
+        title: '서울 ➔ 제주도 (해상대교)',
+        totalDist: 480,
+        isSeaBridge: true,
+        seaBridgeStartDist: 410,
+        waypoints: [
+          { name: '서울', dist: 0 },
+          { name: '천안', dist: 80 },
+          { name: '대전', dist: 140 },
+          { name: '전주', dist: 210 },
+          { name: '광주', dist: 280 },
+          { name: '목포', dist: 340 },
+          { name: '해남', dist: 380 },
+          { name: '완도', dist: 410 },
+          { name: '해상대교', dist: 450 },
+          { name: '제주', dist: 480 }
+        ]
+      },
+      {
+        id: 'busan',
+        title: '서울 ➔ 부산',
+        totalDist: 390,
+        waypoints: [
+          { name: '서울', dist: 0 },
+          { name: '수원', dist: 35 },
+          { name: '천안', dist: 80 },
+          { name: '청주', dist: 115 },
+          { name: '대전', dist: 150 },
+          { name: '황간', dist: 200 },
+          { name: '구미', dist: 245 },
+          { name: '대구', dist: 285 },
+          { name: '경주', dist: 325 },
+          { name: '울산', dist: 355 },
+          { name: '부산', dist: 390 }
+        ]
+      },
+      {
+        id: 'daegu',
+        title: '서울 ➔ 대구',
+        totalDist: 280,
+        waypoints: [
+          { name: '서울', dist: 0 },
+          { name: '성남', dist: 25 },
+          { name: '이천', dist: 60 },
+          { name: '충주', dist: 105 },
+          { name: '문경', dist: 145 },
+          { name: '점촌', dist: 170 },
+          { name: '상주', dist: 195 },
+          { name: '구미', dist: 225 },
+          { name: '군위', dist: 255 },
+          { name: '대구', dist: 280 }
+        ]
+      },
+      {
+        id: 'jinju',
+        title: '서울 ➔ 진주',
+        totalDist: 320,
+        waypoints: [
+          { name: '서울', dist: 0 },
+          { name: '의왕', dist: 25 },
+          { name: '오산', dist: 50 },
+          { name: '천안', dist: 85 },
+          { name: '대전', dist: 140 },
+          { name: '금산', dist: 175 },
+          { name: '무주', dist: 205 },
+          { name: '장수', dist: 240 },
+          { name: '함양', dist: 275 },
+          { name: '진주', dist: 320 }
+        ]
+      },
+      {
+        id: 'gwangju',
+        title: '서울 ➔ 광주',
+        totalDist: 300,
+        waypoints: [
+          { name: '서울', dist: 0 },
+          { name: '수원', dist: 35 },
+          { name: '천안', dist: 80 },
+          { name: '공주', dist: 120 },
+          { name: '논산', dist: 155 },
+          { name: '정안', dist: 180 },
+          { name: '익산', dist: 210 },
+          { name: '전주', dist: 235 },
+          { name: '정읍', dist: 265 },
+          { name: '광주', dist: 300 }
+        ]
+      }
+    ];
+
+    // --- 2. CAR DATABASE (10 VEHICLES) ---
+    const CAR_DATABASE = [
+      {
+        id: 'compact',
+        name: '기본 경차',
+        price: 0,
+        color: '#ef4444',
+        maxSpeed: 210,
+        accel: 70,
+        lives: 3,
+        perkText: '표준 밸런스 차량',
+        icon: 'fa-car-side',
+        coinMultiplier: 1,
+        hasMagnet: false
+      },
+      {
+        id: 'sedan',
+        name: '시티 세단',
+        price: 20,
+        color: '#3b82f6',
+        maxSpeed: 225,
+        accel: 80,
+        lives: 3,
+        perkText: '빠른 acceleration 가속',
+        icon: 'fa-car',
+        coinMultiplier: 1,
+        hasMagnet: false
+      },
+      {
+        id: 'suv',
+        name: '로드 SUV',
+        price: 40,
+        color: '#10b981',
+        maxSpeed: 215,
+        accel: 75,
+        lives: 4,
+        perkText: '체력 +1 내구성 강화',
+        icon: 'fa-truck-monster',
+        coinMultiplier: 1,
+        hasMagnet: false
+      },
+      {
+        id: 'sports',
+        name: '스포츠카',
+        price: 70,
+        color: '#f59e0b',
+        maxSpeed: 245,
+        accel: 100,
+        lives: 3,
+        perkText: '고속주행 능률 향상',
+        icon: 'fa-car-burst',
+        coinMultiplier: 1,
+        hasMagnet: false
+      },
+      {
+        id: 'police',
+        name: '순찰 경찰차',
+        price: 100,
+        color: '#38bdf8',
+        maxSpeed: 235,
+        accel: 90,
+        lives: 3,
+        perkText: '자동 코인 흡입 자석',
+        icon: 'fa-shield-halved',
+        coinMultiplier: 1,
+        hasMagnet: true
+      },
+      {
+        id: 'taxi',
+        name: '옐로우 택시',
+        price: 130,
+        color: '#eab308',
+        maxSpeed: 230,
+        accel: 85,
+        lives: 3,
+        perkText: '코인 획득량 +50% 보너스',
+        icon: 'fa-taxi',
+        coinMultiplier: 1.5,
+        hasMagnet: false
+      },
+      {
+        id: 'supercar',
+        name: '레드 슈퍼카',
+        price: 180,
+        color: '#dc2626',
+        maxSpeed: 260,
+        accel: 115,
+        lives: 3,
+        perkText: '최고속도 260km/h 도달',
+        icon: 'fa-gauge-high',
+        coinMultiplier: 1,
+        hasMagnet: false
+      },
+      {
+        id: 'ktx',
+        name: 'KTX 하이퍼카',
+        price: 250,
+        color: '#0284c7',
+        maxSpeed: 280,
+        accel: 130,
+        lives: 3,
+        perkText: '최고속도 280km/h 초고속',
+        icon: 'fa-train-subway',
+        coinMultiplier: 1,
+        hasMagnet: false
+      },
+      {
+        id: 'cybertruck',
+        name: '사이버 트럭',
+        price: 350,
+        color: '#94a3b8',
+        maxSpeed: 240,
+        accel: 95,
+        lives: 5,
+        perkText: '장갑 강화 (체력 +2)',
+        icon: 'fa-truck-pickup',
+        coinMultiplier: 1,
+        hasMagnet: false
+      },
+      {
+        id: 'phantom',
+        name: '황금 롤스로이스',
+        price: 500,
+        color: '#fbbf24',
+        maxSpeed: 275,
+        accel: 120,
+        lives: 4,
+        perkText: '코인 2배 획득 + 자석',
+        icon: 'fa-crown',
+        coinMultiplier: 2,
+        hasMagnet: true
+      }
+    ];
+
+    // --- 3. SAVED STATE & LOCALSTORAGE ---
+    let selectedRouteIndex = 0;
+    let totalCoins = parseInt(localStorage.getItem('highway_coins_pc') || '0', 10);
+    let unlockedCars = JSON.parse(localStorage.getItem('highway_unlocked_pc') || '["compact"]');
+    let equippedCarId = localStorage.getItem('highway_equipped_pc') || 'compact';
+
+    function saveUserData() {
+      localStorage.setItem('highway_coins_pc', totalCoins.toString());
+      localStorage.setItem('highway_unlocked_pc', JSON.stringify(unlockedCars));
+      localStorage.setItem('highway_equipped_pc', equippedCarId);
+      updateCoinsUI();
+    }
+
+    function getEquippedCar() {
+      return CAR_DATABASE.find(c => c.id === equippedCarId) || CAR_DATABASE[0];
+    }
+
+    // --- 4. AUDIO SYNTHESIS ENGINE ---
+    class SoundEffects {
+      constructor() { this.ctx = null; }
+      init() {
+        try {
+          if (!this.ctx) {
+            this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+          }
+          if (this.ctx && this.ctx.state === 'suspended') {
+            this.ctx.resume();
+          }
+        } catch(e) { console.error("Audio initialization error:", e); }
+      }
+      playCoin() {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(987.77, now);
+        osc.frequency.setValueAtTime(1318.51, now + 0.08);
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.25);
+      }
+      playCrash() {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(180, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(30, this.ctx.currentTime + 0.35);
+        gain.gain.setValueAtTime(0.35, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.35);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.35);
+      }
+      playCheckpoint() {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(523.25, now);
+        osc.frequency.setValueAtTime(659.25, now + 0.08);
+        osc.frequency.setValueAtTime(783.99, now + 0.16);
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now);
+        osc.stop(now + 0.3);
+      }
+      playVictory() {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+        [523.25, 659.25, 783.99, 1046.50].forEach((freq, i) => {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, now + i * 0.12);
+          gain.gain.setValueAtTime(0.25, now + i * 0.12);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + i * 0.12 + 0.4);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(now + i * 0.12);
+          osc.stop(now + i * 0.12 + 0.4);
+        });
+      }
+    }
+    const audio = new SoundEffects();
+
+    // --- 5. DOM ELEMENTS & CANVAS SETUP ---
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const startOverlay = document.getElementById('startOverlay');
+    const garageModal = document.getElementById('garageModal');
+    const gameOverOverlay = document.getElementById('gameOverOverlay');
+    const victoryOverlay = document.getElementById('victoryOverlay');
+    const routeListContainer = document.getElementById('routeListContainer');
+    const carGrid = document.getElementById('carGrid');
+
+    // UI Buttons
+    const startBtn = document.getElementById('startBtn');
+    const openGarageBtn = document.getElementById('openGarageBtn');
+    const closeGarageBtn = document.getElementById('closeGarageBtn');
+    const garageDoneBtn = document.getElementById('garageDoneBtn');
+    const restartBtn = document.getElementById('restartBtn');
+    const changeRouteBtn = document.getElementById('changeRouteBtn');
+    const victoryRestartBtn = document.getElementById('victoryRestartBtn');
+    const victoryChangeRouteBtn = document.getElementById('victoryChangeRouteBtn');
+
+    // HUD Elements
+    const hudCoins = document.getElementById('hudCoins');
+    const totalBankCoins = document.getElementById('totalBankCoins');
+    const garageCoinBalance = document.getElementById('garageCoinBalance');
+    const timerDisplay = document.getElementById('timerDisplay');
+    const currentRouteTitle = document.getElementById('currentRouteTitle');
+    const currentSegmentText = document.getElementById('currentSegmentText');
+    const distRemaining = document.getElementById('distRemaining');
+    const progressBar = document.getElementById('progressBar');
+    const checkpointNodes = document.getElementById('checkpointNodes');
+    const checkpointBanner = document.getElementById('checkpointBanner');
+    const checkpointBannerText = document.getElementById('checkpointBannerText');
+    const livesContainer = document.getElementById('livesContainer');
+
+    // --- 6. LANDSCAPE ENGINE STATE ---
+    let gameState = 'START';
+    let currentDistance = 0;
+    let lives = 3;
+    let maxLives = 3;
+    let sessionCoins = 0;
+    let startTime = 0;
+    let elapsedTime = 0;
+    let timerInterval = null;
+    let currentWaypointIndex = 0;
+    let roadOffset = 0;
+    let lastTime = 0;
+    let invulnerableTimer = 0;
+
+    // Horizontal Highway Geometry (4 Horizontal Lanes)
+    const NUM_LANES = 4;
+    let laneHeight = 0;
+    let roadTop = 0;
+    let roadBottom = 0;
+
+    const player = {
+      x: 100,
+      y: 0,
+      width: 70,
+      height: 38,
+      speed: 120,
+      minSpeed: 80,
+      maxSpeed: 210,
+      accel: 70,
+      color: '#ef4444'
+    };
+
+    let traffic = [];
+    let coins = [];
+    let particles = [];
+    let floatingTexts = [];
+
+    const keys = { up: false, down: false, left: false, right: false, boost: false };
+
+    // Orientation Check
+    function checkOrientation() {
+      const isPortrait = window.innerHeight > window.innerWidth && window.innerWidth < 768;
+      const warning = document.getElementById('portraitWarning');
+      if (isPortrait) warning.classList.remove('hidden');
+      else warning.classList.add('hidden');
+    }
+
+    function resizeCanvas() {
+      checkOrientation();
+      const rect = canvas.parentElement.getBoundingClientRect();
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+
+      const highwayHeight = canvas.height * 0.65;
+      roadTop = (canvas.height - highwayHeight) / 2;
+      roadBottom = roadTop + highwayHeight;
+      laneHeight = highwayHeight / NUM_LANES;
+
+      if (gameState === 'START') {
+        player.x = 120;
+        player.y = roadTop + laneHeight * 1.5 - player.height / 2;
+      }
+    }
+
+    window.addEventListener('resize', resizeCanvas);
+
+    // --- 7. UI RENDERERS ---
+    function updateCoinsUI() {
+      totalBankCoins.textContent = totalCoins;
+      garageCoinBalance.textContent = totalCoins;
+      hudCoins.textContent = sessionCoins;
+
+      const equipped = getEquippedCar();
+      document.getElementById('equippedCarName').textContent = equipped.name;
+      document.getElementById('equippedCarPerk').textContent = equipped.perkText;
+      document.getElementById('equippedCarIcon').style.color = equipped.color;
+    }
+
+    function renderRouteList() {
+      routeListContainer.innerHTML = '';
+      ROUTE_DATA.forEach((route, idx) => {
+        const isSelected = idx === selectedRouteIndex;
+        const card = document.createElement('div');
+        card.className = `p-2.5 rounded-xl border transition-all cursor-pointer flex justify-between items-center ${
+          isSelected 
+            ? 'bg-slate-800/90 border-cyan-400 shadow-md ring-2 ring-cyan-400/30' 
+            : 'bg-slate-900/60 border-slate-800 hover:bg-slate-800/50'
+        }`;
+        
+        const waypointsText = route.waypoints.map(w => w.name).join(' ➔ ');
+
+        card.innerHTML = `
+          <div class="flex flex-col gap-0.5 overflow-hidden pr-2">
+            <div class="flex items-center gap-2">
+              <span class="font-bold text-xs md:text-sm text-white">${route.title}</span>
+              <span class="text-[10px] bg-slate-700 text-slate-300 px-2 py-0.5 rounded-full font-arcade">${route.totalDist}km</span>
+              ${route.isSeaBridge ? '<span class="text-[10px] bg-blue-600 text-white px-1.5 py-0.2 rounded">해상대교</span>' : ''}
+            </div>
+            <div class="text-[10px] text-slate-400 truncate w-full" title="${waypointsText}">
+              ${waypointsText}
+            </div>
+          </div>
+          <div class="text-lg ${isSelected ? 'text-cyan-400' : 'text-slate-600'}">
+            <i class="fa-solid ${isSelected ? 'fa-circle-check' : 'fa-circle'}"></i>
+          </div>
+        `;
+
+        card.addEventListener('click', () => {
+          selectedRouteIndex = idx;
+          renderRouteList();
+          setupRouteNodes();
+        });
+
+        routeListContainer.appendChild(card);
+      });
+    }
+
+    function renderGarageGrid() {
+      carGrid.innerHTML = '';
+      CAR_DATABASE.forEach(car => {
+        const isUnlocked = unlockedCars.includes(car.id);
+        const isEquipped = equippedCarId === car.id;
+
+        const card = document.createElement('div');
+        card.className = `p-3 rounded-xl border flex justify-between items-center ${
+          isEquipped 
+            ? 'bg-amber-950/40 border-amber-400 ring-2 ring-amber-400/30' 
+            : isUnlocked 
+              ? 'bg-slate-900/80 border-slate-700' 
+              : 'bg-slate-950/60 border-slate-800 opacity-80'
+        }`;
+
+        card.innerHTML = `
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-xl" style="color: ${car.color}">
+              <i class="fa-solid ${car.icon}"></i>
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="font-bold text-xs text-white">${car.name}</span>
+                <span class="text-[10px] bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded font-arcade">속도:${car.maxSpeed}</span>
+              </div>
+              <div class="text-[10px] text-cyan-300 mt-0.5">${car.perkText}</div>
+            </div>
+          </div>
+
+          <div>
+            ${
+              isEquipped 
+                ? `<span class="px-3 py-1 bg-amber-500 text-slate-950 font-black text-xs rounded-lg shadow">장착중</span>` 
+                : isUnlocked 
+                  ? `<button class="equip-btn cursor-pointer px-3 py-1 bg-slate-700 hover:bg-slate-600 text-white font-bold text-xs rounded-lg transition" data-id="${car.id}">장착하기</button>`
+                  : `<button class="buy-btn cursor-pointer px-3 py-1 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs rounded-lg transition flex items-center gap-1" data-id="${car.id}" data-price="${car.price}">
+                       <i class="fa-solid fa-coins"></i> ${car.price}
+                     </button>`
+            }
+          </div>
+        `;
+
+        carGrid.appendChild(card);
+      });
+
+      document.querySelectorAll('.equip-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          equippedCarId = e.currentTarget.getAttribute('data-id');
+          saveUserData();
+          renderGarageGrid();
+        });
+      });
+
+      document.querySelectorAll('.buy-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const id = e.currentTarget.getAttribute('data-id');
+          const price = parseInt(e.currentTarget.getAttribute('data-price'), 10);
+
+          if (totalCoins >= price) {
+            totalCoins -= price;
+            unlockedCars.push(id);
+            equippedCarId = id;
+            saveUserData();
+            renderGarageGrid();
+          } else {
+            alert('코인이 부족합니다! 고속도로에서 코인을 더 수집하세요.');
+          }
+        });
+      });
+    }
+
+    function setupRouteNodes() {
+      const activeRoute = ROUTE_DATA[selectedRouteIndex];
+      currentRouteTitle.textContent = activeRoute.title;
+      
+      checkpointNodes.innerHTML = '';
+      activeRoute.waypoints.forEach((wp, idx) => {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'relative flex flex-col items-center';
+
+        const dot = document.createElement('div');
+        dot.className = `w-3 h-3 rounded-full transition-all duration-300 ${
+          idx === 0 ? 'bg-cyan-400 active-node ring-2 ring-cyan-300' : 'bg-slate-700'
+        }`;
+        dot.id = `node-${idx}`;
+
+        const label = document.createElement('span');
+        label.id = `label-${idx}`;
+        label.className = `absolute top-4 text-[9px] md:text-[11px] font-bold whitespace-nowrap transition-all duration-300 ${
+          idx === 0 ? 'text-cyan-300 font-extrabold scale-110 drop-shadow-[0_0_8px_rgba(34,211,238,0.8)]' : 'text-slate-500'
+        }`;
+        label.textContent = wp.name;
+
+        wrapper.appendChild(dot);
+        wrapper.appendChild(label);
+        checkpointNodes.appendChild(wrapper);
+      });
+    }
+
+    function updateProgressUI() {
+      const activeRoute = ROUTE_DATA[selectedRouteIndex];
+      const totalDist = activeRoute.totalDist;
+      const pct = Math.min(100, (currentDistance / totalDist) * 100);
+      
+      progressBar.style.width = `${pct}%`;
+      distRemaining.textContent = `${Math.max(0, Math.round(totalDist - currentDistance))}km`;
+
+      const waypoints = activeRoute.waypoints;
+      for (let i = 0; i < waypoints.length; i++) {
+        const node = document.getElementById(`node-${i}`);
+        const label = document.getElementById(`label-${i}`);
+        if (!node) continue;
+
+        if (currentDistance >= waypoints[i].dist) {
+          if (i > currentWaypointIndex) {
+            currentWaypointIndex = i;
+            triggerCheckpointBanner(waypoints[i].name);
+            audio.playCheckpoint();
+          }
+          node.className = 'w-3 h-3 rounded-full transition-all duration-300 bg-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.8)]';
+          if (label) {
+            label.className = 'absolute top-4 text-[9px] md:text-[11px] font-extrabold text-cyan-300 whitespace-nowrap scale-105 drop-shadow-[0_0_6px_rgba(34,211,238,0.8)]';
+          }
+        } else {
+          node.className = 'w-3 h-3 rounded-full transition-all duration-300 bg-slate-700';
+          if (label) {
+            label.className = 'absolute top-4 text-[9px] md:text-[11px] font-bold text-slate-500 whitespace-nowrap';
+          }
+        }
+      }
+
+      const activeNode = document.getElementById(`node-${currentWaypointIndex}`);
+      if (activeNode) {
+        activeNode.classList.add('active-node', 'ring-2', 'ring-cyan-300');
+      }
+
+      const currentWp = waypoints[currentWaypointIndex].name;
+      const nextWp = waypoints[Math.min(waypoints.length - 1, currentWaypointIndex + 1)].name;
+      if (currentWaypointIndex >= waypoints.length - 1) {
+        currentSegmentText.textContent = `${currentWp} 도착 완료!`;
+      } else {
+        currentSegmentText.textContent = `${currentWp} ➔ ${nextWp}`;
+      }
+    }
+
+    function triggerCheckpointBanner(name) {
+      checkpointBannerText.textContent = `${name} 통과!`;
+      checkpointBanner.classList.remove('opacity-0', '-translate-y-4');
+      checkpointBanner.classList.add('opacity-100', 'translate-y-0');
+      setTimeout(() => {
+        checkpointBanner.classList.remove('opacity-100', 'translate-y-0');
+        checkpointBanner.classList.add('opacity-0', '-translate-y-4');
+      }, 1500);
+    }
+
+    function updateLivesUI() {
+      livesContainer.innerHTML = '';
+      for (let i = 0; i < maxLives; i++) {
+        const heart = document.createElement('i');
+        heart.className = `fa-solid fa-heart ${i < lives ? 'text-red-500' : 'text-slate-700'}`;
+        livesContainer.appendChild(heart);
+      }
+    }
+
+    // --- 8. CONTROLS SETUP ---
+    function setupPCControls() {
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') keys.up = true;
+        if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') keys.down = true;
+        if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = true;
+        if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = true;
+        if (e.code === 'Space') keys.boost = true;
+      });
+
+      window.addEventListener('keyup', (e) => {
+        if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') keys.up = false;
+        if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') keys.down = false;
+        if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') keys.left = false;
+        if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') keys.right = false;
+        if (e.code === 'Space') keys.boost = false;
+      });
+    }
+
+    // --- 9. START & RESTART GAME ---
+    function startGame() {
+      audio.init();
+
+      const equipped = getEquippedCar();
+      player.maxSpeed = equipped.maxSpeed;
+      player.accel = equipped.accel;
+      player.color = equipped.color;
+      maxLives = equipped.lives;
+      lives = maxLives;
+      updateLivesUI();
+
+      currentDistance = 0;
+      sessionCoins = 0;
+      currentWaypointIndex = 0;
+      traffic = [];
+      coins = [];
+      particles = [];
+      floatingTexts = [];
+      invulnerableTimer = 0;
+
+      updateProgressUI();
+      updateCoinsUI();
+
+      startOverlay.classList.add('hidden');
+      garageModal.classList.add('hidden');
+      gameOverOverlay.classList.add('hidden');
+      victoryOverlay.classList.add('hidden');
+
+      gameState = 'PLAYING';
+      startTime = Date.now();
+      lastTime = performance.now();
+
+      if (timerInterval) clearInterval(timerInterval);
+      timerInterval = setInterval(() => {
+        elapsedTime = Date.now() - startTime;
+        const mins = Math.floor(elapsedTime / 60000).toString().padStart(2, '0');
+        const secs = Math.floor((elapsedTime % 60000) / 1000).toString().padStart(2, '0');
+        const ms = Math.floor((elapsedTime % 1000) / 10).toString().padStart(2, '0');
+        timerDisplay.textContent = `${mins}:${secs}.${ms}`;
+      }, 10);
+
+      requestAnimationFrame(gameLoop);
+    }
+
+    startBtn.addEventListener('click', startGame);
+    restartBtn.addEventListener('click', startGame);
+    victoryRestartBtn.addEventListener('click', startGame);
+
+    openGarageBtn.addEventListener('click', () => {
+      renderGarageGrid();
+      garageModal.classList.remove('hidden');
+    });
+
+    closeGarageBtn.addEventListener('click', () => garageModal.classList.add('hidden'));
+    garageDoneBtn.addEventListener('click', () => garageModal.classList.add('hidden'));
+
+    changeRouteBtn.addEventListener('click', () => {
+      gameOverOverlay.classList.add('hidden');
+      startOverlay.classList.remove('hidden');
+    });
+
+    victoryChangeRouteBtn.addEventListener('click', () => {
+      victoryOverlay.classList.add('hidden');
+      startOverlay.classList.remove('hidden');
+    });
+
+    // --- 10. SPAWNING TRAFFIC & COINS ---
+    function spawnTraffic() {
+      if (traffic.length >= 7) return;
+
+      const laneIndex = Math.floor(Math.random() * NUM_LANES);
+      const laneYCenter = roadTop + laneIndex * laneHeight + laneHeight / 2;
+
+      const inSameLane = traffic.filter(v => Math.abs(v.y - (laneYCenter - v.height/2)) < 20);
+      if (inSameLane.some(v => v.x > canvas.width - 200)) return;
+
+      const types = [
+        { type: 'car', width: 65, height: 36, speedFactor: 0.6, color: '#3b82f6' },
+        { type: 'sports', width: 65, height: 36, speedFactor: 0.8, color: '#eab308' },
+        { type: 'truck', width: 95, height: 42, speedFactor: 0.45, color: '#64748b' },
+        { type: 'bus', width: 110, height: 44, speedFactor: 0.5, color: '#10b981' }
+      ];
+
+      const vehicleDef = types[Math.floor(Math.random() * types.length)];
+      
+      traffic.push({
+        x: canvas.width + 100,
+        y: laneYCenter - vehicleDef.height / 2,
+        width: vehicleDef.width,
+        height: vehicleDef.height,
+        speed: player.speed * vehicleDef.speedFactor + (Math.random() * 20 - 10),
+        color: vehicleDef.color,
+        type: vehicleDef.type
+      });
+    }
+
+    function spawnCoin() {
+      if (coins.length >= 6) return;
+
+      const laneIndex = Math.floor(Math.random() * NUM_LANES);
+      const laneYCenter = roadTop + laneIndex * laneHeight + laneHeight / 2;
+
+      coins.push({
+        x: canvas.width + 50,
+        y: laneYCenter,
+        radius: 11
+      });
+    }
+
+    function addFloatingText(x, y, text, color = '#f59e0b') {
+      floatingTexts.push({ x, y, text, color, life: 1.0 });
+    }
+
+    function createExplosion(x, y) {
+      for (let i = 0; i < 22; i++) {
+        particles.push({
+          x, y,
+          vx: (Math.random() - 0.5) * 8,
+          vy: (Math.random() - 0.5) * 8,
+          size: Math.random() * 5 + 2,
+          color: ['#ef4444', '#f97316', '#eab308', '#ffffff'][Math.floor(Math.random() * 4)],
+          life: 1
+        });
+      }
+    }
+
+    // --- 11. GAME LOOP ---
+    function gameLoop(timestamp) {
+      if (gameState !== 'PLAYING') return;
+
+      const dt = Math.min((timestamp - lastTime) / 1000, 0.1);
+      lastTime = timestamp;
+
+      const equipped = getEquippedCar();
+
+      // Steering (Vertical Lane Shifts)
+      const verticalSpeed = 320 * dt;
+      if (keys.up) player.y -= verticalSpeed;
+      if (keys.down) player.y += verticalSpeed;
+
+      // Speed Adjustments
+      if (keys.right || keys.boost) player.speed = Math.min(player.maxSpeed + (keys.boost ? 30 : 0), player.speed + player.accel * dt * (keys.boost ? 1.5 : 1));
+      else if (keys.left) player.speed = Math.max(player.minSpeed, player.speed - 90 * dt);
+      else {
+        if (player.speed > 120) player.speed -= 30 * dt;
+        if (player.speed < 120) player.speed += 30 * dt;
+      }
+
+      player.y = Math.max(roadTop + 4, Math.min(roadBottom - player.height - 4, player.y));
+
+      const activeRoute = ROUTE_DATA[selectedRouteIndex];
+      const distanceGained = (player.speed / 3600) * dt * 28;
+      currentDistance += distanceGained;
+      updateProgressUI();
+
+      if (currentDistance >= activeRoute.totalDist) {
+        triggerVictory();
+        return;
+      }
+
+      if (invulnerableTimer > 0) invulnerableTimer -= dt;
+
+      roadOffset += (player.speed * dt * 10);
+      if (roadOffset >= 40) roadOffset %= 40;
+
+      if (Math.random() < 0.04) spawnTraffic();
+      if (Math.random() < 0.045) spawnCoin();
+
+      // Update Traffic
+      for (let i = traffic.length - 1; i >= 0; i--) {
+        const v = traffic[i];
+        const relativeSpeed = (player.speed - v.speed) * 4.2 * dt;
+        v.x -= relativeSpeed + 1.2;
+
+        if (invulnerableTimer <= 0 && checkCollision(player, v)) {
+          handleCrash(v);
+        }
+
+        if (v.x < -150) traffic.splice(i, 1);
+      }
+
+      // Update Coins
+      const pxCenter = player.x + player.width / 2;
+      const pyCenter = player.y + player.height / 2;
+
+      for (let i = coins.length - 1; i >= 0; i--) {
+        const c = coins[i];
+        c.x -= player.speed * 3.5 * dt;
+
+        if (equipped.hasMagnet) {
+          const dx = pxCenter - c.x;
+          const dy = pyCenter - c.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist < 180) {
+            c.x += (dx / dist) * 260 * dt;
+            c.y += (dy / dist) * 260 * dt;
+          }
+        }
+
+        const distToPlayer = Math.hypot(pxCenter - c.x, pyCenter - c.y);
+        if (distToPlayer < c.radius + player.height / 2) {
+          const earned = Math.round(1 * equipped.coinMultiplier);
+          sessionCoins += earned;
+          totalCoins += earned;
+          saveUserData();
+          audio.playCoin();
+          addFloatingText(c.x, c.y, `+${earned}`, '#f59e0b');
+          coins.splice(i, 1);
+          continue;
+        }
+
+        if (c.x < -50) coins.splice(i, 1);
+      }
+
+      particles.forEach((p, idx) => {
+        p.x += p.vx; p.y += p.vy; p.life -= dt * 2;
+        if (p.life <= 0) particles.splice(idx, 1);
+      });
+
+      floatingTexts.forEach((ft, idx) => {
+        ft.y -= 30 * dt; ft.life -= dt * 1.5;
+        if (ft.life <= 0) floatingTexts.splice(idx, 1);
+      });
+
+      render();
+      requestAnimationFrame(gameLoop);
+    }
+
+    function checkCollision(r1, r2) {
+      const p = 5;
+      return !(
+        r1.x + p > r2.x + r2.width - p ||
+        r1.x + r1.width - p < r2.x + p ||
+        r1.y + p > r2.y + r2.height - p ||
+        r1.y + r1.height - p < r2.y + p
+      );
+    }
+
+    function handleCrash(obstacle) {
+      audio.playCrash();
+      lives--;
+      updateLivesUI();
+      invulnerableTimer = 1.8;
+
+      createExplosion(player.x + player.width / 2, player.y + player.height / 2);
+
+      canvas.parentElement.classList.add('shake');
+      setTimeout(() => canvas.parentElement.classList.remove('shake'), 350);
+
+      player.speed = 60;
+      currentDistance = Math.max(0, currentDistance - 3);
+
+      if (lives <= 0) {
+        triggerGameOver("충돌 충격으로 인해 차량 운행이 중단되었습니다.");
+      }
+    }
+
+    function triggerGameOver(reason) {
+      gameState = 'GAMEOVER';
+      clearInterval(timerInterval);
+
+      const activeRoute = ROUTE_DATA[selectedRouteIndex];
+
+      document.getElementById('crashReason').textContent = reason;
+      document.getElementById('goRouteName').textContent = activeRoute.title;
+      document.getElementById('goRegion').textContent = activeRoute.waypoints[currentWaypointIndex].name;
+      document.getElementById('goCoins').textContent = `+${sessionCoins} 코인`;
+      document.getElementById('goTime').textContent = timerDisplay.textContent;
+
+      gameOverOverlay.classList.remove('hidden');
+    }
+
+    function triggerVictory() {
+      gameState = 'VICTORY';
+      clearInterval(timerInterval);
+      audio.playVictory();
+
+      const activeRoute = ROUTE_DATA[selectedRouteIndex];
+
+      document.getElementById('victorySubtitle').textContent = `${activeRoute.title} 노선을 성공적으로 완주하였습니다!`;
+      document.getElementById('victoryRouteName').textContent = activeRoute.title;
+      document.getElementById('victoryCoins').textContent = `+${sessionCoins} 코인`;
+      document.getElementById('finalRecordTime').textContent = timerDisplay.textContent;
+
+      const totalSecs = elapsedTime / 1000;
+      const avgKmH = Math.round((activeRoute.totalDist / (totalSecs / 3600)) * 0.22);
+      document.getElementById('finalAvgSpeed').textContent = `${Math.min(210, Math.max(120, avgKmH))} km/h`;
+
+      victoryOverlay.classList.remove('hidden');
+    }
+
+    // --- 12. HORIZONTAL RENDERER WITH SEA BRIDGE GIMMICK ---
+    function render() {
+      const activeRoute = ROUTE_DATA[selectedRouteIndex];
+      const startDist = activeRoute.seaBridgeStartDist || 410;
+      const isSeaBridgeSection = activeRoute.isSeaBridge && currentDistance >= startDist;
+
+      if (isSeaBridgeSection) {
+        // Ocean Waters Background
+        ctx.fillStyle = '#0284c7';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Water Waves / Ripples
+        ctx.fillStyle = '#38bdf8';
+        ctx.globalAlpha = 0.25;
+        for (let x = -50 + (roadOffset * 2) % 60; x < canvas.width; x += 60) {
+          ctx.beginPath();
+          ctx.arc(x, roadTop - 30, 18, 0, Math.PI);
+          ctx.arc(x + 30, roadBottom + 30, 18, 0, Math.PI);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1.0;
+
+        // Sea Bridge Concrete Deck
+        ctx.fillStyle = '#475569';
+        ctx.fillRect(0, roadTop, canvas.width, roadBottom - roadTop);
+
+        // Bridge Safety Barriers (Top & Bottom)
+        ctx.fillStyle = '#cbd5e1';
+        ctx.fillRect(0, roadTop - 8, canvas.width, 8);
+        ctx.fillRect(0, roadBottom, canvas.width, 8);
+
+        // Bridge Pylons & Lights
+        for (let x = -40 + roadOffset; x < canvas.width; x += 100) {
+          ctx.fillStyle = '#0284c7';
+          ctx.fillRect(x, roadTop - 16, 12, 8);
+          ctx.fillRect(x, roadBottom + 8, 12, 8);
+
+          ctx.fillStyle = '#fef08a';
+          ctx.beginPath();
+          ctx.arc(x + 6, roadTop - 12, 4, 0, Math.PI * 2);
+          ctx.arc(x + 6, roadBottom + 12, 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else {
+        // Standard Highway
+        ctx.fillStyle = '#070a13';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.fillStyle = '#1e293b';
+        ctx.fillRect(0, 0, canvas.width, roadTop);
+        ctx.fillRect(0, roadBottom, canvas.width, canvas.height - roadBottom);
+
+        ctx.fillStyle = '#334155';
+        ctx.fillRect(0, roadTop, canvas.width, roadBottom - roadTop);
+
+        ctx.fillStyle = '#f59e0b';
+        ctx.fillRect(0, roadTop - 4, canvas.width, 4);
+        ctx.fillRect(0, roadBottom, canvas.width, 4);
+
+        ctx.fillStyle = '#64748b';
+        for (let x = -40 + roadOffset; x < canvas.width; x += 80) {
+          ctx.fillRect(x, roadTop - 18, 8, 8);
+          ctx.fillRect(x, roadBottom + 10, 8, 8);
+        }
+      }
+
+      // Dashed Horizontal Lane Dividers
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([25, 20]);
+      ctx.lineDashOffset = -roadOffset;
+
+      for (let i = 1; i < NUM_LANES; i++) {
+        const y = roadTop + i * laneHeight;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+
+      // Draw Highway Coins
+      coins.forEach(c => {
+        ctx.save();
+        ctx.translate(c.x, c.y);
+
+        ctx.shadowColor = '#fbbf24';
+        ctx.shadowBlur = 10;
+
+        ctx.fillStyle = '#f59e0b';
+        ctx.beginPath();
+        ctx.arc(0, 0, c.radius, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#fef08a';
+        ctx.beginPath();
+        ctx.arc(0, 0, c.radius - 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#d97706';
+        ctx.font = '900 10px Orbitron, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('C', 0, 1);
+
+        ctx.restore();
+      });
+
+      // Draw Traffic Cars
+      traffic.forEach(v => drawHorizontalCar(v.x, v.y, v.width, v.height, v.color, false, v.type));
+
+      // Draw Player Car
+      const equipped = getEquippedCar();
+      if (invulnerableTimer <= 0 || Math.floor(Date.now() / 100) % 2 === 0) {
+        drawHorizontalCar(player.x, player.y, player.width, player.height, player.color, true, equipped.id);
+      }
+
+      // Explosion Particles
+      particles.forEach(p => {
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = p.life;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1.0;
+      });
+
+      // Floating Coins Text
+      floatingTexts.forEach(ft => {
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, ft.life);
+        ctx.fillStyle = ft.color;
+        ctx.font = '900 14px Orbitron, sans-serif';
+        ctx.fillText(ft.text, ft.x, ft.y);
+        ctx.restore();
+      });
+
+      // Speed Gauge Overlay
+      ctx.font = '900 14px Orbitron, sans-serif';
+      ctx.fillStyle = player.speed > 230 ? '#ef4444' : '#10b981';
+      ctx.fillText(`속도: ${Math.round(player.speed)} km/h`, canvas.width - 140, roadBottom + 30);
+    }
+
+    function drawHorizontalCar(x, y, w, h, color, isPlayer = false, carId = 'car') {
+      ctx.save();
+      ctx.translate(x, y);
+
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+      ctx.beginPath();
+      ctx.roundRect(3, 3, w, h, 6);
+      ctx.fill();
+
+      if (isPlayer && carId === 'phantom') {
+        ctx.shadowColor = '#fbbf24';
+        ctx.shadowBlur = 15;
+      }
+
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.roundRect(0, 0, w, h, 6);
+      ctx.fill();
+
+      if (carId === 'cybertruck') {
+        ctx.fillStyle = '#64748b';
+        ctx.beginPath();
+        ctx.moveTo(w * 0.25, 0);
+        ctx.lineTo(w, h / 2);
+        ctx.lineTo(w * 0.25, h);
+        ctx.lineTo(0, h);
+        ctx.lineTo(0, 0);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      ctx.fillStyle = carId === 'phantom' ? '#fef08a' : '#0284c7';
+      if (isPlayer) {
+        ctx.fillRect(w - 22, 5, 12, h - 10);
+        ctx.fillRect(20, 6, 16, h - 12);
+      } else {
+        ctx.fillRect(10, 5, 12, h - 10);
+        ctx.fillRect(w - 36, 6, 16, h - 12);
+      }
+
+      if (isPlayer) {
+        if (carId === 'police') {
+          const flash = Math.floor(Date.now() / 150) % 2 === 0;
+          ctx.fillStyle = flash ? '#ef4444' : '#3b82f6';
+          ctx.fillRect(w / 2 - 2, 2, 6, h - 4);
+        }
+
+        ctx.fillStyle = '#fef08a';
+        ctx.fillRect(w - 3, 3, 3, 6);
+        ctx.fillRect(w - 3, h - 9, 3, 6);
+        ctx.fillStyle = '#dc2626';
+        ctx.fillRect(0, 3, 3, 6);
+        ctx.fillRect(0, h - 9, 3, 6);
+      } else {
+        ctx.fillStyle = '#fef08a';
+        ctx.fillRect(0, 3, 3, 6);
+        ctx.fillRect(0, h - 9, 3, 6);
+        ctx.fillStyle = '#dc2626';
+        ctx.fillRect(w - 3, 3, 3, 6);
+        ctx.fillRect(w - 3, h - 9, 3, 6);
+      }
+
+      ctx.restore();
+    }
+
+    // --- 13. INITIALIZATION ---
+    window.onload = () => {
+      saveUserData();
+      renderRouteList();
+      setupRouteNodes();
+      resizeCanvas();
+      setupPCControls();
+      render();
+    };
+  </script>
+</body>
+</html>
